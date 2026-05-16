@@ -276,9 +276,22 @@ function chooseBaselineAction(policy, cr, liftsRun){
   if(policy==='random') return remaining[Math.floor(rng()*remaining.length)].idx;
   if(policy==='nearest') return remaining.reduce((best,item)=>dist(sp,item.l)<dist(sp,best.l)?item:best,remaining[0]).idx;
   if(policy==='radiusPriority'){
+    // Cluster-density: among in-radius lifts, pick the one whose neighbourhood
+    // has the most other reachable lifts (maximizes future same-radius bonuses).
+    // Falls back to nearest when no in-radius lift exists. Matches the
+    // python_mappo env's _baseline_lift_indices_radius_priority semantics so
+    // fair_compare lines up between engines.
+    const c=cfg();
     const inRadius=remaining.filter(item=>inCraneRadius(cr,item.l));
-    const pool=inRadius.length?inRadius:remaining;
-    return pool.reduce((best,item)=>dist(sp,item.l)<dist(sp,best.l)?item:best,pool[0]).idx;
+    if(inRadius.length){
+      const cluster=item=>-remaining.filter(o=>o.idx!==item.idx && dist(item.l,o.l)<=c.craneRadius).length;
+      return inRadius.reduce((best,item)=>{
+        const s=cluster(item), sb=cluster(best);
+        if(s!==sb) return s<sb?item:best;
+        return dist(sp,item.l)<dist(sp,best.l)?item:best;
+      },inRadius[0]).idx;
+    }
+    return remaining.reduce((best,item)=>dist(sp,item.l)<dist(sp,best.l)?item:best,remaining[0]).idx;
   }
   return remaining.reduce((best,item)=>dist(sp,item.l)<dist(sp,best.l)?item:best,remaining[0]).idx;
 }
