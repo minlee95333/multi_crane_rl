@@ -1,6 +1,6 @@
 import json, math
 from pathlib import Path
-p=Path('/root/crane_rl_dashboard/curriculum_runs/current_rl_validation_result.json')
+p=Path(__file__).resolve().with_name('current_rl_validation_result.json')
 r=json.loads(p.read_text())
 def pct(a,b): return (a-b)/a*100
 seen=r['seen']; unseen=r['unseen']

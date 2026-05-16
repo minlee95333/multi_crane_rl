@@ -232,6 +232,10 @@
 <script>
 const W=100,H=100; let cranes=[], lifts=[], qTables=[], history=[], best=null, training=false, lastEval=null, rng=Math.random, replayTimer=null, replayTime=0, replayPlaying=false, mappoModel=null, lastPlanningResult=null, lastPlanningCompare=[], dragItem=null;
 const $=id=>document.getElementById(id); const val=id=>parseFloat($(id).value);
+// HTML escape for any string interpolated into innerHTML. Crane id/type and lift id
+// flow through the scenario editor and imported JSON, both of which can contain
+// arbitrary characters — escaping them prevents stored XSS.
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function cfg(){return {nC:+$('numCranes').value,nL:+$('numLifts').value,craneType:$('craneType').value,fixedDuration:val('fixedDuration'),setupTime:val('setupTime'),craneRadius:val('craneRadius'),episodes:+$('episodes').value,maxSteps:+$('maxSteps').value,alpha:val('alpha'),gamma:val('gamma'),epsStart:val('epsStart'),epsEnd:val('epsEnd'),seedRuns:+$('seedRuns').value,baseSeed:+$('baseSeed').value,learningMode:$('learningMode').value,learningAlgorithm:$('learningAlgorithm')?$('learningAlgorithm').value:'q',actorShareMode:$('actorShareMode')?$('actorShareMode').value:'typeShared',actorLr:$('actorLr')?val('actorLr'):0.012,criticLr:$('criticLr')?val('criticLr'):0.02,gaeLambda:$('gaeLambda')?val('gaeLambda'):0.95,ppoClip:$('ppoClip')?val('ppoClip'):0.2,candidateK:+$('candidateK').value,liftingRadius:val('liftingRadius'),safetyRadius:Math.max(val('safetyRadius'),val('liftingRadius')),rSingle:val('rSingle'),rAll:val('rAll'),rSame:val('rSame'),pIdle:val('pIdle'),pInterSoft:val('pInterSoft'),pInterHard:val('pInterHard'),pInter:val('pInterHard'),pTime:val('pTime'),pMove:val('pMove')}}
 
 function pad2(n){return String(n).padStart(2,'0');}
@@ -626,7 +630,14 @@ function runEpisode(ep=0, learn=true, epsilon=0.1, policy='rl'){const c=cfg(); l
       mappoLearnItems.forEach(u=>learnMappoStep(u.cr,u.choice,u.reward,stepGlobalBefore,stepGlobalAfter));
     }
   }
-  let done=ls.filter(l=>l.status==='done').length, makespan=Math.max(0,...cs.map(c=>c.availableTime||0),...ls.map(l=>l.finish||0)); return {reward:totalReward, done, total:ls.length, makespan:Math.round(makespan), inter, softInter, hardExecuted:0, hardMask:hardInter, hardInter, interPenaltyTotal, same:sameCount, setupTotal, travelTotal, liftTotal, moveTotal, cranes:cs, lifts:ls, events};}
+  let done=ls.filter(l=>l.status==='done').length, makespan=Math.max(0,...cs.map(c=>c.availableTime||0),...ls.map(l=>l.finish||0));
+  // Average actual lifting / danger radius across recorded events — matches
+  // the PyTorch env summary contract so fair_compare's radius columns are
+  // meaningful instead of hardcoded zero.
+  const sb=softBufferValue();
+  const actualLiftRadiusAvg = events.length ? events.reduce((a,e)=>a+(e.actualLiftRadius||0),0)/events.length : 0;
+  const actualDangerRadiusAvg = events.length ? events.reduce((a,e)=>a+((e.actualLiftRadius||0)+sb),0)/events.length : 0;
+  return {reward:totalReward, done, total:ls.length, makespan:Math.round(makespan), inter, softInter, hardExecuted:0, hardMask:hardInter, hardInter, interPenaltyTotal, same:sameCount, setupTotal, travelTotal, liftTotal, moveTotal, actualLiftRadiusAvg, actualDangerRadiusAvg, cranes:cs, lifts:ls, events};}
 async function startTraining(){ if(training) return; const c=cfg(); if(!cranes.length) generateScenario(c.baseSeed); training=true; $('trainBtn').disabled=true; history=[]; best=null; if(c.learningAlgorithm==='mappo'){initMappoModel();} else {initQTables();}
   log(c.learningMode==='multi'?`여러 seed 시나리오 학습 시작: seed ${c.baseSeed}~${c.baseSeed+Math.max(1,c.seedRuns)-1}를 episode마다 순환`:'단일 시나리오 학습 시작');
   for(let ep=1; ep<=c.episodes; ep++){
@@ -717,7 +728,7 @@ async function runCurriculumTrainingEvaluation(){
   }catch(err){log(`Curriculum 실행 오류: ${err.message}`); throw err;}
   finally{training=false; setButtonsDisabled(false); restoreControls(snap);}
 }
-function renderCurriculumRows(stageResults,stdStats,hardStats){$('repeatRows').innerHTML=[...stageResults.map(s=>`<tr><td>${s.stage} 학습</td><td>${s.nC} cranes / ${s.nL} lifts</td><td>${s.episodes} ep, seed ${s.seedRuns}</td><td>완료율 ${s.avgComplete.toFixed(1)}%</td><td>best ${s.bestMakespan??'-'}분 / K=${s.candidateK}</td></tr>`),`<tr><td>표준 평가</td><td>3 cranes / 24 lifts</td><td>${stdStats.makespan.toFixed(1)}±${stdStats.makespanSd.toFixed(1)}분</td><td>Soft ${stdStats.softInter.toFixed(1)} / HardMask ${stdStats.hardInter.toFixed(1)}</td><td>Travel ${stdStats.travel.toFixed(1)} / Setup ${stdStats.setup.toFixed(1)}</td></tr>`,`<tr><td>확장 평가</td><td>4 cranes / 36 lifts</td><td>${hardStats.makespan.toFixed(1)}±${hardStats.makespanSd.toFixed(1)}분</td><td>Soft ${hardStats.softInter.toFixed(1)} / HardMask ${hardStats.hardInter.toFixed(1)}</td><td>Travel ${hardStats.travel.toFixed(1)} / Setup ${hardStats.setup.toFixed(1)}</td></tr>`].join('');}
+function renderCurriculumRows(stageResults,stdStats,hardStats){$('repeatRows').innerHTML=[...stageResults.map(s=>`<tr><td>${esc(s.stage)} 학습</td><td>${s.nC} cranes / ${s.nL} lifts</td><td>${s.episodes} ep, seed ${s.seedRuns}</td><td>완료율 ${s.avgComplete.toFixed(1)}%</td><td>best ${s.bestMakespan??'-'}분 / K=${s.candidateK}</td></tr>`),`<tr><td>표준 평가</td><td>3 cranes / 24 lifts</td><td>${stdStats.makespan.toFixed(1)}±${stdStats.makespanSd.toFixed(1)}분</td><td>Soft ${stdStats.softInter.toFixed(1)} / HardMask ${stdStats.hardInter.toFixed(1)}</td><td>Travel ${stdStats.travel.toFixed(1)} / Setup ${stdStats.setup.toFixed(1)}</td></tr>`,`<tr><td>확장 평가</td><td>4 cranes / 36 lifts</td><td>${hardStats.makespan.toFixed(1)}±${hardStats.makespanSd.toFixed(1)}분</td><td>Soft ${hardStats.softInter.toFixed(1)} / HardMask ${hardStats.hardInter.toFixed(1)}</td><td>Travel ${hardStats.travel.toFixed(1)} / Setup ${hardStats.setup.toFixed(1)}</td></tr>`].join('');}
 function renderCurriculumInterpretation(stageResults,stdStats,hardStats){$('interpretLog').textContent=[`Curriculum 1→2→3 학습 완료`,`- 1단계: 2 cranes / 12 lifts로 기본 작업 완료·setup 유지·idle 회피를 먼저 학습`,`- 2단계: 3 cranes / 24 lifts로 현재 표준 Stage-1.5 조건에 적응`,`- 3단계: 4 cranes / 36 lifts로 더 많은 크레인/양중물 및 실제 양중반경 간섭 조합에 적응`,`- 표준 평가 평균 makespan: ${stdStats.makespan.toFixed(1)}분, Soft ${stdStats.softInter.toFixed(1)}, HardMask ${stdStats.hardInter.toFixed(1)}`,`- 확장 평가 평균 makespan: ${hardStats.makespan.toFixed(1)}분, Soft ${hardStats.softInter.toFixed(1)}, HardMask ${hardStats.hardInter.toFixed(1)}`,`- 해석: actor/critic weight를 유지한 채 난이도만 올렸으므로, 단순 재학습이 아니라 curriculum learning 결과입니다.`].join('\n');}
 function scrollToSection(id,btn){
   document.querySelectorAll?.('.tabbar button')?.forEach(b=>b.classList.remove('active'));
@@ -798,13 +809,13 @@ function renderPlanningGantt(r){
   $('planningGantt').innerHTML=r.cranes.map((cr,i)=>{
     const evs=(r.events||[]).filter(e=>e.craneId===cr.id).sort((a,b)=>a.start-b.start), bars=evs.map(e=>{
       const left=Math.max(0,e.start/maxT*100), width=Math.max(1,(e.finish-e.start)/maxT*100), color=e.interferenceLevel==='soft'?'#f59e0b':craneColor(i);
-      return `<div class="gantt-bar" title="${e.craneId} ${e.liftId}: ${Math.round(e.start)}~${Math.round(e.finish)}분" style="left:${left}%;width:${width}%;background:${color}">${e.liftId}</div>`;
+      return `<div class="gantt-bar" title="${esc(e.craneId)} ${esc(e.liftId)}: ${Math.round(e.start)}~${Math.round(e.finish)}분" style="left:${left}%;width:${width}%;background:${color}">${esc(e.liftId)}</div>`;
     }).join('');
-    return `<div class="gantt-row"><b>${cr.id}</b><div class="gantt-line">${bars}</div></div>`;
+    return `<div class="gantt-row"><b>${esc(cr.id)}</b><div class="gantt-line">${bars}</div></div>`;
   }).join('')+`<div class="note">0 ~ ${maxT}분 · 노랑/주황 bar는 soft 노출 포함 작업입니다.</div>`;
 }
 function renderPlanningCompareRows(results){
-  $('planningCompareRows').innerHTML=results.map(x=>`<tr><td>${x.name}</td><td>${x.r.done}/${x.r.total}</td><td>${x.r.makespan}분</td><td>${x.r.reward.toFixed(1)}</td><td>Soft ${x.r.softInter||0} / 실행Hard ${x.r.hardExecuted||0} / HardMask ${x.r.hardMask??x.r.hardInter??0}</td><td>${x.r.travelTotal.toFixed(1)}</td><td>${x.r.setupTotal.toFixed(1)}</td><td>${x.r.moveTotal.toFixed(1)}</td></tr>`).join('');
+  $('planningCompareRows').innerHTML=results.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.r.done}/${x.r.total}</td><td>${x.r.makespan}분</td><td>${x.r.reward.toFixed(1)}</td><td>Soft ${x.r.softInter||0} / 실행Hard ${x.r.hardExecuted||0} / HardMask ${x.r.hardMask??x.r.hardInter??0}</td><td>${x.r.travelTotal.toFixed(1)}</td><td>${x.r.setupTotal.toFixed(1)}</td><td>${x.r.moveTotal.toFixed(1)}</td></tr>`).join('');
 }
 function runPlanningWithModel(){
   const seed=+$('planningSeed').value||501, policy=$('planningPolicy').value;
@@ -920,7 +931,7 @@ function runSeenUnseenEvaluation(){const c=cfg(); const seenN=Math.max(3,Math.mi
   for(let s=0;s<unseenN;s++){lastResults=evaluatePolicySetForSeed(unseenBase+s,singleQ,multiQ,mappoShared); lastResults.forEach(x=>unseen[x.name].push(x.r));}
   const summary=names.map(name=>({name,seen:summarizePolicy(seen[name],0,seenN),unseen:summarizePolicy(unseen[name],0,unseenN)}));
   renderSeenUnseenRows(summary); renderSeenUnseenInterpretation(summary,base,seenN,unseenBase,unseenN); renderBaselineRows(lastResults); lastEval=(lastResults.find(x=>x.name==='MAPPO-shared')||lastResults.find(x=>x.name==='RL-multi')).r; updateAll(history.length); drawCharts(); drawSim(lastEval); renderSchedule(lastEval); replayTime=0; updateReplayControls(lastEval); log('Seen/Unseen 평가 완료: MAPPO-shared 포함, 학습 seed와 미학습 seed의 일반화 gap을 계산했습니다.');}
-function renderSeenUnseenRows(summary){$('repeatRows').innerHTML=summary.map(x=>{let gap=x.unseen.makespan-x.seen.makespan, pct=gap/Math.max(1,x.seen.makespan)*100; return `<tr><td>${x.name}</td><td>Seen ${x.seen.makespan.toFixed(1)}분</td><td>Unseen ${x.unseen.makespan.toFixed(1)}분</td><td>${gap>=0?'+':''}${gap.toFixed(1)}분 (${pct.toFixed(1)}%)</td><td>Unseen Soft ${x.unseen.softInter.toFixed(1)} / HardMask ${x.unseen.hardInter.toFixed(1)}</td></tr>`;}).join('');}
+function renderSeenUnseenRows(summary){$('repeatRows').innerHTML=summary.map(x=>{let gap=x.unseen.makespan-x.seen.makespan, pct=gap/Math.max(1,x.seen.makespan)*100; return `<tr><td>${esc(x.name)}</td><td>Seen ${x.seen.makespan.toFixed(1)}분</td><td>Unseen ${x.unseen.makespan.toFixed(1)}분</td><td>${gap>=0?'+':''}${gap.toFixed(1)}분 (${pct.toFixed(1)}%)</td><td>Unseen Soft ${x.unseen.softInter.toFixed(1)} / HardMask ${x.unseen.hardInter.toFixed(1)}</td></tr>`;}).join('');}
 function renderSeenUnseenInterpretation(summary,base,seenN,unseenBase,unseenN){const by=Object.fromEntries(summary.map(x=>[x.name,x])); const bestUnseen=summary.reduce((a,b)=>b.unseen.makespan<a.unseen.makespan?b:a,summary[0]); const single=by['RL-single'], multi=by['RL-multi']; let lines=[];
   lines.push(`Seen/Unseen 일반화 평가`);
   lines.push(`- Seen: 학습에 사용한 seed 구간 ${base}~${base+seenN-1}, Unseen: 학습에 사용하지 않은 seed 구간 ${unseenBase}~${unseenBase+unseenN-1}`);
@@ -942,7 +953,7 @@ function renderSensitivityInterpretation(rows){const bestMake=rows.reduce((a,b)=
   lines.push(`- 해석: hard 양중반경 중첩은 action mask로 실행 차단되므로 안전 제약의 핵심 검증 대상입니다. soft penalty는 근접 작업을 약하게 억제하는 shaping 항으로만 사용합니다.`);
   $('interpretLog').textContent=lines.join('\n');}
 
-function renderRepeatRows(summary){$('repeatRows').innerHTML=summary.map(x=>`<tr><td>${x.name}</td><td>${x.stats.makespan.toFixed(1)}±${x.stats.makespanSd.toFixed(1)}분</td><td>${x.stats.reward.toFixed(1)}±${x.stats.rewardSd.toFixed(1)}</td><td>${x.stats.inter.toFixed(1)}회 (Soft ${x.stats.softInter.toFixed(1)} / HardMask ${x.stats.hardInter.toFixed(1)})</td><td>${(x.stats.winRate*100).toFixed(1)}%</td></tr>`).join('');}
+function renderRepeatRows(summary){$('repeatRows').innerHTML=summary.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.stats.makespan.toFixed(1)}±${x.stats.makespanSd.toFixed(1)}분</td><td>${x.stats.reward.toFixed(1)}±${x.stats.rewardSd.toFixed(1)}</td><td>${x.stats.inter.toFixed(1)}회 (Soft ${x.stats.softInter.toFixed(1)} / HardMask ${x.stats.hardInter.toFixed(1)})</td><td>${(x.stats.winRate*100).toFixed(1)}%</td></tr>`).join('');}
 function renderInterpretation(summary){const by=Object.fromEntries(summary.map(x=>[x.name,x.stats])); const bestMake=summary.reduce((a,b)=>b.stats.makespan<a.stats.makespan?b:a,summary[0]); const bestInter=summary.reduce((a,b)=>b.stats.inter<a.stats.inter?b:a,summary[0]); const before=by['RL-before'], single=by['RL-single'], multi=by['RL-multi'], mappo=by['MAPPO-shared']; let lines=[];
   lines.push(`반복 검증 해석`);
   lines.push(`- 평균 makespan 기준 최상 정책은 ${bestMake.name}입니다. 평균 ${bestMake.stats.makespan.toFixed(1)}분, 승률 ${(bestMake.stats.winRate*100).toFixed(1)}%입니다.`);
@@ -957,13 +968,13 @@ function renderInterpretation(summary){const by=Object.fromEntries(summary.map(x
   $('interpretLog').textContent=lines.join('\n');}
 function updateAll(ep){let h=history.slice(-20); let avg=h.length?h.reduce((s,x)=>s+x.reward,0)/h.length:0; $('mEpisode').textContent=ep; $('mReward').textContent=avg.toFixed(1); $('mBest').textContent=best?best.makespan+'분':'-'; let base=lastEval||best||history.at(-1); $('mDone').textContent=base?Math.round(base.done/base.total*100)+'%':'0%'; renderSummaryMetrics(base); renderAgents(base);}
 function renderSummaryMetrics(r){$('mEvalMakespan').textContent=r?r.makespan+'분':'-'; $('mInter').textContent=r?`Soft ${r.softInter||0}회 / HardMask ${r.hardInter||0}회`:'-'; $('mTravel').textContent=r?r.travelTotal.toFixed(1)+'분':'-'; $('mSetup').textContent=r?r.setupTotal.toFixed(1)+'분':'-'; if($('mMove'))$('mMove').textContent=r?r.moveTotal.toFixed(1):'-';}
-function renderBaselineRows(results){$('baselineRows').innerHTML=results.map(x=>`<tr><td>${x.name}</td><td>${x.r.done}/${x.r.total}</td><td>${x.r.makespan}분</td><td>${x.r.reward.toFixed(1)}</td><td>Soft ${x.r.softInter||0} / 실행Hard ${x.r.hardExecuted||0} / HardMask ${x.r.hardMask??x.r.hardInter??0}</td><td>${x.r.travelTotal.toFixed(1)}</td><td>${x.r.setupTotal.toFixed(1)}</td><td>${x.r.moveTotal.toFixed(1)}</td></tr>`).join('');}
+function renderBaselineRows(results){$('baselineRows').innerHTML=results.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.r.done}/${x.r.total}</td><td>${x.r.makespan}분</td><td>${x.r.reward.toFixed(1)}</td><td>Soft ${x.r.softInter||0} / 실행Hard ${x.r.hardExecuted||0} / HardMask ${x.r.hardMask??x.r.hardInter??0}</td><td>${x.r.travelTotal.toFixed(1)}</td><td>${x.r.setupTotal.toFixed(1)}</td><td>${x.r.moveTotal.toFixed(1)}</td></tr>`).join('');}
 function renderMetricLog(data,title){
   if(Array.isArray(data)){$('metricLog').textContent=`${title}\n`+data.map(x=>`${x.name}: 완료 ${x.r.done}/${x.r.total}, makespan ${x.r.makespan}분, reward ${x.r.reward.toFixed(1)}, soft노출 ${x.r.softInter||0}회 / 실행Hard ${x.r.hardExecuted||0}회 / hard마스크 ${x.r.hardMask??x.r.hardInter??0}회, soft penalty ${(x.r.interPenaltyTotal||0).toFixed(1)}, 동일 반경 연속 ${x.r.same}회, travel ${x.r.travelTotal.toFixed(1)}분, 이동거리 ${x.r.moveTotal.toFixed(1)}, setup ${x.r.setupTotal.toFixed(1)}분, lift ${x.r.liftTotal.toFixed(1)}분`).join('\n')+`\n\n해석 기준: 실제 양중반경 hard overlap은 action mask로 실행 차단됩니다. Soft는 허용 가능한 안전/영향 반경 근접 노출이므로 실패 지표가 아니라 보조 지표로 봅니다.`; return;}
   $('metricLog').textContent=`${title}\n완료: ${data.done}/${data.total}\nMakespan: ${data.makespan}분\nReward: ${data.reward.toFixed(1)}\nSoft 노출: ${data.softInter||0}회, 허용 가능한 안전/영향 반경 근접 작업\n실행 Hard overlap: ${data.hardExecuted||0}회
 Hard action mask: ${data.hardMask??data.hardInter??0}회, 실제 양중반경 overlap 후보 차단\n- Soft penalty 합계: ${(data.interPenaltyTotal||0).toFixed(1)}\n동일 반경 연속: ${data.same}회\nTravel: ${data.travelTotal.toFixed(1)}분\n이동거리: ${data.moveTotal.toFixed(1)}\nSetup: ${data.setupTotal.toFixed(1)}분\nLift: ${data.liftTotal.toFixed(1)}분\n크레인별 완료시각: ${data.cranes.map(c=>`${c.id} ${Math.round(c.availableTime)}분`).join(', ')}\n\n평가 우선순위: makespan → 완료율/HardMask 정상 작동 → travel/setup/move 효율 → soft 노출 → reward`;
 }
-function renderAgents(r){let rows=''; let cs=(r?r.cranes:cranes); cs.forEach(c=>rows+=`<tr><td>${c.id}<br><span class="note">${c.type||'50톤 모바일 크레인'}</span></td><td>${c.done||0}</td><td>${Math.round(c.availableTime||0)}분</td><td>${Math.round(c.idle||0)}분</td><td>${(c.reward||0).toFixed(1)}</td><td>${(c.moveDistance||0).toFixed(1)}</td></tr>`); $('agentRows').innerHTML=rows;}
+function renderAgents(r){let rows=''; let cs=(r?r.cranes:cranes); cs.forEach(c=>rows+=`<tr><td>${esc(c.id)}<br><span class="note">${esc(c.type||'50톤 모바일 크레인')}</span></td><td>${c.done||0}</td><td>${Math.round(c.availableTime||0)}분</td><td>${Math.round(c.idle||0)}분</td><td>${(c.reward||0).toFixed(1)}</td><td>${(c.moveDistance||0).toFixed(1)}</td></tr>`); $('agentRows').innerHTML=rows;}
 function renderSchedule(r){
   const cs=(r&&r.cranes)||[];
   $('scheduleLog').textContent=cs.map(c=>`${c.id}\n  ${((c.schedule||[]).join('\n  '))||'(작업 없음)'}`).join('\n\n');

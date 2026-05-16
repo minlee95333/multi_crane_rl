@@ -48,6 +48,7 @@ class CraneSchedulingEnv:
         self.fixed_duration = float(cfg.get('fixed_duration', 25.0))
         self.setup_time = float(cfg.get('setup_time', 10.0))
         self.crane_radius = float(cfg.get('crane_radius', 18.0))
+        self.crane_speed = float(cfg.get('crane_speed', 10.0))
         self.max_steps = int(cfg.get('max_steps', 220))
         r = cfg.get('reward', {})
         self.r_single = float(r.get('r_single', 10.0))
@@ -80,8 +81,11 @@ class CraneSchedulingEnv:
     def reset(self, seed: int = 0):
         self.rng = random.Random(seed)
         self._set_seed(seed)
+        # hard_mask_total counts hard-radius overlaps that were blocked before execution.
+        # Hard overlaps never reach event recording (mask logic in step() forces hard=0
+        # via replacement or idles the crane), so a separate "executed" counter would
+        # be vestigially zero — use hard_mask_total alone for the safety metric.
         self.hard_mask_total = 0
-        self.executed_hard_total = 0
         self.step_count = 0
         self.events: List[Dict] = []
         # Match browser generateScenario(): cranes and lifts are uniform in the
@@ -115,7 +119,7 @@ class CraneSchedulingEnv:
         c, l = self.cranes[ci], self.lifts[li]
         sx, sy, same = self.setup_target(c, l)
         move = dist((c.setup_x, c.setup_y), (sx, sy))
-        travel = move / 10.0
+        travel = move / max(self.crane_speed, 1e-6)
         setup = 0.0 if same else self.setup_time
         start = c.available
         finish = start + travel + setup + self.fixed_duration
@@ -217,15 +221,31 @@ class CraneSchedulingEnv:
             sum(e.get('setup',0) for e in self.events)/1000.0,
         ], dtype=np.float32)
 
-    def step(self, actions: List[int]):
+    def step(self, actions: List[int], lift_indices_override: Optional[List[Optional[int]]] = None):
+        """Run one scheduling step.
+
+        actions: per-crane Candidate-K slot index, used unless overridden.
+        lift_indices_override: optional per-crane raw lift index. Baseline policies
+            (nearest, radiusPriority) bypass the Candidate-K filter through this
+            channel so each baseline can express its own preference over the full
+            remaining-lift pool. If the preferred lift is already used or done,
+            we fall back to the slot-0 candidate before idling.
+        """
         self.step_count += 1
         rewards = np.zeros(self.nC, dtype=np.float32)
         planned=[]; used=set(); hard_masks=0; soft_total=0
         order = sorted(range(self.nC), key=lambda i: self.cranes[i].available)
         for ci in order:
             cands = self.candidate_actions(ci, used)
-            ai = int(actions[ci]) if ci < len(actions) else 0
-            li = cands[ai] if 0 <= ai < len(cands) else None
+            if lift_indices_override is not None and ci < len(lift_indices_override):
+                preferred = lift_indices_override[ci]
+                if preferred is not None and not self.lifts[preferred].done and preferred not in used:
+                    li = preferred
+                else:
+                    li = cands[0] if cands and cands[0] is not None else None
+            else:
+                ai = int(actions[ci]) if ci < len(actions) else 0
+                li = cands[ai] if 0 <= ai < len(cands) else None
             if li is None:
                 if self.done_count() < self.nL:
                     rewards[ci] += self.p_idle
@@ -236,6 +256,7 @@ class CraneSchedulingEnv:
                 hard_masks += hard
                 self.hard_mask_total += hard
                 replacement = None
+                # First, scan the existing top-K candidates.
                 for alt_li in cands:
                     if alt_li is None or alt_li == li or alt_li in used:
                         continue
@@ -244,6 +265,18 @@ class CraneSchedulingEnv:
                     if alt_hard == 0:
                         replacement = (alt_li, alt, alt_soft)
                         break
+                # Fallback: if top-K were all hard, scan every remaining lift so we
+                # never idle while a feasible task exists somewhere else.
+                if replacement is None:
+                    tried = set(c for c in cands if c is not None) | {li}
+                    for alt_li, alt_l in enumerate(self.lifts):
+                        if alt_l.done or alt_li in used or alt_li in tried:
+                            continue
+                        alt = self.candidate_outcome(ci, alt_li)
+                        alt_hard, alt_soft = self.risk_counts(alt, planned)
+                        if alt_hard == 0:
+                            replacement = (alt_li, alt, alt_soft)
+                            break
                 if replacement is None:
                     rewards[ci] += self.p_idle
                     continue
@@ -278,8 +311,9 @@ class CraneSchedulingEnv:
         return {
             'done': self.done_count(), 'total': self.nL, 'makespan': round(makespan, 3),
             'reward': 0.0, 'softInter': int(sum(e.get('softConflict',0) for e in self.events)),
-            # Split actual executed hard overlaps from blocked/masked candidates.
-            'hardExecuted': int(self.executed_hard_total),
+            # hardMask is the canonical counter for blocked hard overlaps. Mask logic
+            # prevents any from being executed, so a separate "executed" field would
+            # always be zero and was removed.
             'hardMask': int(self.hard_mask_total),
             'hardInter': int(self.hard_mask_total),  # backward-compatible alias
             'travelTotal': sum(e.get('travel',0.0) for e in self.events),
@@ -291,20 +325,68 @@ class CraneSchedulingEnv:
             'cranes': [asdict(c) for c in self.cranes],
         }
 
+    def _baseline_lift_indices_nearest(self) -> List[Optional[int]]:
+        """Greedy nearest-lift-first with sequential conflict resolution.
+        Cranes are assigned in available-time order so they don't contend for
+        the same lift."""
+        avail = set(i for i, l in enumerate(self.lifts) if not l.done)
+        used: set = set()
+        order = sorted(range(self.nC), key=lambda i: self.cranes[i].available)
+        prefs: List[Optional[int]] = [None] * self.nC
+        for ci in order:
+            pool = [i for i in avail if i not in used]
+            if not pool:
+                continue
+            c = self.cranes[ci]
+            li = min(pool, key=lambda i: (dist((c.setup_x, c.setup_y), (self.lifts[i].x, self.lifts[i].y)), i))
+            prefs[ci] = li
+            used.add(li)
+        return prefs
+
+    def _baseline_lift_indices_radius_priority(self) -> List[Optional[int]]:
+        """Cluster-density heuristic: among lifts already inside the crane's
+        setup radius (setup_time = 0), pick the one whose own neighborhood has
+        the most other reachable lifts, maximizing future same-radius bonuses.
+        If no in-radius lift exists, fall back to nearest. Sequential greedy
+        across cranes."""
+        avail = set(i for i, l in enumerate(self.lifts) if not l.done)
+        used: set = set()
+        order = sorted(range(self.nC), key=lambda i: self.cranes[i].available)
+        prefs: List[Optional[int]] = [None] * self.nC
+        for ci in order:
+            pool = [i for i in avail if i not in used]
+            if not pool:
+                continue
+            c = self.cranes[ci]
+            in_radius = [i for i in pool if dist((c.setup_x, c.setup_y), (self.lifts[i].x, self.lifts[i].y)) <= self.crane_radius + 1e-9]
+            if in_radius:
+                def cluster(i):
+                    l = self.lifts[i]
+                    return -sum(1 for j in pool if j != i and dist((l.x, l.y), (self.lifts[j].x, self.lifts[j].y)) <= self.crane_radius)
+                li = min(in_radius, key=lambda i: (cluster(i), dist((c.setup_x, c.setup_y), (self.lifts[i].x, self.lifts[i].y)), i))
+            else:
+                li = min(pool, key=lambda i: (dist((c.setup_x, c.setup_y), (self.lifts[i].x, self.lifts[i].y)), i))
+            prefs[ci] = li
+            used.add(li)
+        return prefs
+
     def run_policy(self, policy: str, model=None, seed: int = 0, greedy=True):
         self.reset(seed)
         total_reward=0.0
         while not self.is_done():
             obs,masks,glob = self.observe()
+            override = None
             if policy == 'random':
                 actions=[self.rng.choice([i for i,m in enumerate(masks[ci]) if m] or [0]) for ci in range(self.nC)]
-            elif policy in ('nearest','radiusPriority'):
-                actions=[0 for _ in range(self.nC)]
+            elif policy == 'nearest':
+                actions=[0]*self.nC; override=self._baseline_lift_indices_nearest()
+            elif policy == 'radiusPriority':
+                actions=[0]*self.nC; override=self._baseline_lift_indices_radius_priority()
             elif policy == 'mappo' and model is not None:
                 actions=model.act_np(obs,masks,greedy=greedy)
             else:
                 actions=[self.rng.choice([i for i,m in enumerate(masks[ci]) if m] or [0]) for ci in range(self.nC)]
-            *_ , rewards, done, info = self.step(actions)
+            *_ , rewards, done, info = self.step(actions, lift_indices_override=override)
             total_reward += float(np.sum(rewards))
         s=self.summary(); s['reward']=total_reward
         return s

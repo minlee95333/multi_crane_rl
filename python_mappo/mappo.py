@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 import random
 import numpy as np
 import torch
@@ -62,7 +62,7 @@ class MAPPOAgent:
         if st.ndim == 1: st = st.unsqueeze(0)
         return self.critic(st).cpu().numpy()
 
-    def update(self, transitions: List[Transition]):
+    def update(self, transitions: List[Transition]) -> Dict[str, float]:
         if not transitions:
             return {}
         m = self.cfg.get('mappo', {})
@@ -116,12 +116,13 @@ class MAPPOAgent:
                 last_losses={'loss':float(loss.detach()), 'actorLoss':float(actor_loss.detach()), 'criticLoss':float(critic_loss.detach()), 'entropy':float(entropy.detach())}
         return last_losses
 
-    def save(self, path: str, extra: Dict = None):
+    def save(self, path: str, extra: Optional[Dict] = None) -> None:
         torch.save({'actor': self.actor.state_dict(), 'critic': self.critic.state_dict(), 'cfg': self.cfg, 'stats': self.stats, 'extra': extra or {}}, path)
 
     @classmethod
-    def load(cls, path: str, device: str = 'cpu'):
-        ckpt=torch.load(path, map_location=device)
+    def load(cls, path: str, device: str = 'cpu') -> 'MAPPOAgent':
+        # weights_only=True blocks arbitrary pickle execution when loading untrusted .pt files.
+        ckpt=torch.load(path, map_location=device, weights_only=True)
         obs_dim=ckpt['stats']['actorDim']; state_dim=ckpt['stats']['criticDim']
         obj=cls(obs_dim, state_dim, ckpt['cfg'], device=device)
         obj.actor.load_state_dict(ckpt['actor']); obj.critic.load_state_dict(ckpt['critic']); obj.stats=ckpt.get('stats', obj.stats)

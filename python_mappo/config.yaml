@@ -4,6 +4,7 @@ num_lifts: 24
 fixed_duration: 25.0
 setup_time: 10.0
 crane_radius: 18.0
+crane_speed: 10.0   # distance units per minute (travel_time = move / crane_speed)
 candidate_k: 5
 max_steps: 220
 base_seed: 101

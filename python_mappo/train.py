@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse, json, time, copy
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 import yaml
 import numpy as np
 import torch
@@ -13,12 +14,12 @@ except ImportError:
     from mappo import MAPPOAgent, Transition
 
 
-def load_cfg(path):
+def load_cfg(path: str) -> Dict[str, Any]:
     with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
-def summarize(samples):
+def summarize(samples: List[Dict[str, Any]]) -> Dict[str, float]:
     def avg(key): return float(np.mean([s.get(key,0) for s in samples])) if samples else 0.0
     def sd(key): return float(np.std([s.get(key,0) for s in samples])) if samples else 0.0
     return {
@@ -34,7 +35,7 @@ def summarize(samples):
     }
 
 
-def evaluate(env, agent, seed_start, seed_count):
+def evaluate(env: CraneSchedulingEnv, agent: MAPPOAgent, seed_start: int, seed_count: int) -> Dict[str, Dict[str, float]]:
     policies = ['mappo', 'nearest', 'radiusPriority', 'random']
     out={}
     for pol in policies:
@@ -45,7 +46,7 @@ def evaluate(env, agent, seed_start, seed_count):
     return out
 
 
-def train(cfg, episodes=None, outdir='outputs', device='cpu'):
+def train(cfg: Dict[str, Any], episodes: Optional[int] = None, outdir: str = 'outputs', device: str = 'cpu') -> Dict[str, Any]:
     outdir=Path(outdir); outdir.mkdir(parents=True, exist_ok=True)
     env=CraneSchedulingEnv(cfg)
     torch.manual_seed(int(cfg.get('base_seed',101)))
@@ -64,7 +65,7 @@ def train(cfg, episodes=None, outdir='outputs', device='cpu'):
         while not done:
             eps = eps_start + (eps_end-eps_start)*(ep/max(1,episodes))
             actions, logps = agent.act(obs, masks, greedy=False, epsilon=eps)
-            values = agent.value(glob.repeat(env.nC).reshape(env.nC, -1) if False else np.stack([glob]*env.nC))
+            values = agent.value(np.stack([glob]*env.nC))
             prev_obs, prev_masks, prev_glob = obs.copy(), masks.copy(), glob.copy()
             obs,masks,glob,rewards,done,info=env.step(actions)
             ep_reward += float(np.sum(rewards))

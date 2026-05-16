@@ -4,9 +4,10 @@
 
 ## 실행
 
+프로젝트 루트(`multi_crane_rl/`)에서 실행하세요:
+
 ```bash
-cd /root/crane_rl_dashboard
-python3 -m python_mappo.train --episodes 150 --outdir python_mappo/outputs
+python -m python_mappo.train --episodes 150 --outdir python_mappo/outputs
 ```
 
 결과:
