@@ -28,7 +28,7 @@ def summarize(samples: List[Dict[str, Any]]) -> Dict[str, float]:
         'makespan': avg('makespan'), 'makespanSd': sd('makespan'), 'reward': avg('reward'),
         'soft': avg('softInter'),
         'hardExecuted': avg('hardExecuted'),
-        'hardMask': avg('hardMask') if any('hardMask' in s for s in samples) else avg('hardInter'),
+        'hardMask': avg('hardMask'),
         'travel': avg('travelTotal'),
         'setup': avg('setupTotal'), 'move': avg('moveTotal'),
         'actualLiftRadius': avg('actualLiftRadiusAvg'), 'actualDangerRadius': avg('actualDangerRadiusAvg'),
@@ -73,7 +73,7 @@ def train(cfg: Dict[str, Any], episodes: Optional[int] = None, outdir: str = 'ou
                 transitions.append(Transition(ci, prev_obs[ci], prev_masks[ci], prev_glob, int(actions[ci]), float(logps[ci]), float(values[ci]), float(rewards[ci]), bool(done)))
         loss=agent.update(transitions)
         summary=env.summary(); summary['reward']=ep_reward
-        row={'ep':ep,'seed':seed,'makespan':summary['makespan'],'done':summary['done'],'total':summary['total'],'reward':ep_reward,'soft':summary['softInter'],'hardExecuted':summary.get('hardExecuted',0),'hardMask':summary.get('hardMask',summary.get('hardInter',0)),'move':summary['moveTotal'],'travel':summary['travelTotal'],'setup':summary['setupTotal']}
+        row={'ep':ep,'seed':seed,'makespan':summary['makespan'],'done':summary['done'],'total':summary['total'],'reward':ep_reward,'soft':summary['softInter'],'hardExecuted':summary.get('hardExecuted',0),'hardMask':summary.get('hardMask',0),'move':summary['moveTotal'],'travel':summary['travelTotal'],'setup':summary['setupTotal']}
         train_log.append(row)
         if summary['done']==summary['total'] and (best is None or summary['makespan']<best['makespan']):
             best=dict(row)
@@ -112,7 +112,7 @@ def train(cfg: Dict[str, Any], episodes: Optional[int] = None, outdir: str = 'ou
 
 
 def _rows_to_samples(rows):
-    return [{'done':r['done'],'total':r['total'],'makespan':r['makespan'],'reward':r['reward'],'softInter':r['soft'],'hardExecuted':r.get('hardExecuted',0),'hardMask':r.get('hardMask',0),'hardInter':r.get('hardMask',0),'moveTotal':r['move'],'travelTotal':r.get('travel',0),'setupTotal':r.get('setup',0)} for r in rows]
+    return [{'done':r['done'],'total':r['total'],'makespan':r['makespan'],'reward':r['reward'],'softInter':r['soft'],'hardExecuted':r.get('hardExecuted',0),'hardMask':r.get('hardMask',0),'moveTotal':r['move'],'travelTotal':r.get('travel',0),'setupTotal':r.get('setup',0)} for r in rows]
 
 
 if __name__ == '__main__':

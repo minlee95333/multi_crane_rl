@@ -14,10 +14,14 @@
     "curriculum:pytorch-mappo": "python3 -m python_mappo.curriculum --episodes 60 90 120 --outdir python_mappo/outputs_curriculum",
     "curriculum:stabilize": "python3 -m python_mappo.curriculum --episodes 90 150 210 --outdir python_mappo/outputs_curriculum_stable"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": ["reinforcement-learning", "mappo", "multi-agent", "scheduling", "crane"],
+  "author": "minlee95333",
+  "license": "MIT",
+  "description": "Multi-crane lift scheduling via MAPPO. PyTorch training engine + browser dashboard.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/minlee95333/multi_crane_rl.git"
+  },
   "dependencies": {
     "localtunnel": "^2.0.2"
   }

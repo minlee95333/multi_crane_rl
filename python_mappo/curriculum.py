@@ -105,7 +105,7 @@ def train_one_level(
             "reward": ep_reward,
             "soft": s["softInter"],
             "hardExecuted": s.get("hardExecuted", 0),
-            "hardMask": s.get("hardMask", s.get("hardInter", 0)),
+            "hardMask": s.get("hardMask", 0),
             "travel": s["travelTotal"],
             "setup": s["setupTotal"],
             "move": s["moveTotal"],

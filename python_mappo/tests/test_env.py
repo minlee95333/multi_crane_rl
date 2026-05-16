@@ -64,3 +64,14 @@ def test_summary_does_not_emit_hard_executed(cfg):
     result = env.run_policy("nearest", seed=101)
     assert "hardExecuted" not in result
     assert "hardMask" in result
+
+
+def test_summary_does_not_emit_hard_inter_alias(cfg):
+    """Round 4-B removed the legacy hardInter alias from env summary;
+    consumers should read hardMask directly."""
+    env = CraneSchedulingEnv(cfg)
+    result = env.run_policy("nearest", seed=101)
+    assert "hardInter" not in result, (
+        "env.summary() still emits the legacy hardInter alias; consumers should "
+        "use hardMask only"
+    )

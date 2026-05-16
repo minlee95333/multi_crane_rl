@@ -315,7 +315,6 @@ class CraneSchedulingEnv:
             # prevents any from being executed, so a separate "executed" field would
             # always be zero and was removed.
             'hardMask': int(self.hard_mask_total),
-            'hardInter': int(self.hard_mask_total),  # backward-compatible alias
             'travelTotal': sum(e.get('travel',0.0) for e in self.events),
             'setupTotal': sum(e.get('setup',0.0) for e in self.events),
             'moveTotal': sum(e.get('move',0.0) for e in self.events),

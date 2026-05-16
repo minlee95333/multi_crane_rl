@@ -23,7 +23,7 @@ const result = run(`(()=>{
   function pctComplete(r){return r.total?100*r.done/r.total:0}
   function summ(samples){
     const v=k=>samples.map(s=>s[k]??0);
-    return {n:samples.length,completeRate:avg(samples.map(pctComplete)),makespan:avg(v('makespan')),makespanSd:sd(v('makespan')),reward:avg(v('reward')),soft:avg(v('softInter')),hardMask:avg(v('hardInter')),travel:avg(v('travelTotal')),setup:avg(v('setupTotal')),move:avg(v('moveTotal')),actualLiftRadius:avg(v('actualLiftRadiusAvg')),actualDangerRadius:avg(v('actualDangerRadiusAvg'))};
+    return {n:samples.length,completeRate:avg(samples.map(pctComplete)),makespan:avg(v('makespan')),makespanSd:sd(v('makespan')),reward:avg(v('reward')),soft:avg(v('softInter')),hardMask:avg(v('hardMask')),travel:avg(v('travelTotal')),setup:avg(v('setupTotal')),move:avg(v('moveTotal')),actualLiftRadius:avg(v('actualLiftRadiusAvg')),actualDangerRadius:avg(v('actualDangerRadiusAvg'))};
   }
   function evalPolicyRange(policy, seedStart, seedCount, model){
     const samples=[];
@@ -50,8 +50,8 @@ const result = run(`(()=>{
     setSeed(trainSeed*3000+ep);
     const eps=c.epsStart+(c.epsEnd-c.epsStart)*(ep/c.episodes);
     const r=runEpisode(ep,true,eps,'mappo');
-    train.push({ep,seed:trainSeed,done:r.done,total:r.total,makespan:r.makespan,reward:r.reward,soft:r.softInter||0,hardMask:r.hardInter||0,move:r.moveTotal||0});
-    if(r.done===r.total && (!best || r.makespan<best.makespan)) best={ep,seed:trainSeed,makespan:r.makespan,reward:r.reward,soft:r.softInter||0,hardMask:r.hardInter||0,move:r.moveTotal||0};
+    train.push({ep,seed:trainSeed,done:r.done,total:r.total,makespan:r.makespan,reward:r.reward,soft:r.softInter||0,hardMask:r.hardMask||0,move:r.moveTotal||0});
+    if(r.done===r.total && (!best || r.makespan<best.makespan)) best={ep,seed:trainSeed,makespan:r.makespan,reward:r.reward,soft:r.softInter||0,hardMask:r.hardMask||0,move:r.moveTotal||0};
   }
   const model=cloneMappoModel();
   const seen={
@@ -69,7 +69,7 @@ const result = run(`(()=>{
     'Random':evalPolicyRange('random',201,30)
   };
   const recent=train.slice(-20);
-  return {config:c, elapsedSec:(Date.now()-t0)/1000, trainEpisodes:train.length, trainSummary:{best, first10:summ(train.slice(0,10).map(x=>({done:x.done,total:x.total,makespan:x.makespan,reward:x.reward,softInter:x.soft,hardInter:x.hardMask,moveTotal:x.move}))), last20:summ(recent.map(x=>({done:x.done,total:x.total,makespan:x.makespan,reward:x.reward,softInter:x.soft,hardInter:x.hardMask,moveTotal:x.move}))), modelStats:model.stats}, seen, unseen};
+  return {config:c, elapsedSec:(Date.now()-t0)/1000, trainEpisodes:train.length, trainSummary:{best, first10:summ(train.slice(0,10).map(x=>({done:x.done,total:x.total,makespan:x.makespan,reward:x.reward,softInter:x.soft,hardMask:x.hardMask,moveTotal:x.move}))), last20:summ(recent.map(x=>({done:x.done,total:x.total,makespan:x.makespan,reward:x.reward,softInter:x.soft,hardMask:x.hardMask,moveTotal:x.move}))), modelStats:model.stats}, seen, unseen};
 })()`);
 const out=process.argv[3]||(__dirname+'/current_rl_validation_result.json');
 fs.writeFileSync(out, JSON.stringify(result,null,2));
