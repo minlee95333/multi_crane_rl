@@ -1,0 +1,22 @@
+{
+  "stage": "3단계",
+  "chunkStart": 1,
+  "chunkEnd": 55,
+  "chunkEpisodes": 55,
+  "nC": 4,
+  "nL": 36,
+  "totalStageEpisodes": 220,
+  "seedRuns": 15,
+  "candidateK": 6,
+  "maxSteps": 320,
+  "elapsedSec": 189.889,
+  "bestMakespan": 294,
+  "avgComplete": 100,
+  "avgReward": 565.7081084414787,
+  "avgMakespan": 365.45454545454544,
+  "avgHardMask": 13.054545454545455,
+  "avgSoft": 8.436363636363636,
+  "updates": 8281,
+  "actorDim": 21,
+  "criticDim": 14
+}

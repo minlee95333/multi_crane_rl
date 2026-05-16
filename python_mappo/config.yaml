@@ -1,0 +1,40 @@
+# PyTorch MAPPO validation config for Stage-1 multi-crane scheduling
+num_cranes: 3
+num_lifts: 24
+fixed_duration: 25.0
+setup_time: 10.0
+crane_radius: 18.0
+candidate_k: 5
+max_steps: 220
+base_seed: 101
+seed_runs: 10
+train_episodes: 150
+seen_seed_start: 101
+seen_seed_count: 10
+unseen_seed_start: 201
+unseen_seed_count: 30
+
+reward:
+  r_single: 10.0
+  r_all: 100.0
+  r_same: 3.0
+  p_idle: -0.5
+  p_inter_soft: -3.0
+  p_time: -0.1
+  p_move: -0.02
+  soft_buffer: 6.0
+
+mappo:
+  gamma: 0.92
+  gae_lambda: 0.95
+  actor_lr: 0.001
+  critic_lr: 0.002
+  clip_eps: 0.20
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  update_epochs: 4
+  minibatch_size: 256
+  hidden_dim: 96
+  eps_start: 0.35
+  eps_end: 0.05

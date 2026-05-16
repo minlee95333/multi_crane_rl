@@ -1,0 +1,24 @@
+{
+  "name": "crane_rl_dashboard",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --check curriculum_runs/crane_script.js && node --check curriculum_runs/smoke_async.js && node curriculum_runs/smoke_async.js",
+    "serve": "python3 app.py",
+    "train:pytorch-mappo": "python3 -m python_mappo.train --episodes 150 --outdir python_mappo/outputs",
+    "eval:pytorch-mappo": "python3 -m python_mappo.evaluate --model python_mappo/outputs/pytorch_mappo_model.pt --seed-start 201 --seed-count 30",
+    "experiment:pytorch-mappo": "python3 -m python_mappo.experiments --episodes 300 500 --outroot python_mappo/outputs_experiments",
+    "sweep:pytorch-reward": "python3 -m python_mappo.reward_sweep --episodes 120 --outroot python_mappo/outputs_sweep",
+    "repeat:pytorch-mappo": "python3 -m python_mappo.repeated_validation --episodes 120 --outroot python_mappo/outputs_repeated",
+    "compare:mappo": "python3 -m python_mappo.fair_compare --browser curriculum_runs/current_rl_validation_result.json --pytorch python_mappo/outputs_repeated/repeated_experiment_summary.json --outdir python_mappo/outputs_fair_compare",
+    "curriculum:pytorch-mappo": "python3 -m python_mappo.curriculum --episodes 60 90 120 --outdir python_mappo/outputs_curriculum",
+    "curriculum:stabilize": "python3 -m python_mappo.curriculum --episodes 90 150 210 --outdir python_mappo/outputs_curriculum_stable"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "localtunnel": "^2.0.2"
+  }
+}

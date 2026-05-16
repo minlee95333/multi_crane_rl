@@ -1,0 +1,74 @@
+{
+  "label": "Standard Seen 3C/24L seed101-110",
+  "mode": "standard",
+  "seedStart": 101,
+  "seedCount": 10,
+  "cfg": {
+    "name": "Standard",
+    "nC": 3,
+    "nL": 24,
+    "episodes": 150,
+    "seedRuns": 10,
+    "candidateK": 5,
+    "maxSteps": 220,
+    "baseSeed": 101
+  },
+  "out": {
+    "mappo": {
+      "n": 10,
+      "completeRate": 100,
+      "makespan": 273,
+      "makespanSd": 20.203960007879644,
+      "reward": 414.6527703489338,
+      "soft": 3.1,
+      "hardMask": 2.1,
+      "travel": 19.41242173487037,
+      "setup": 100,
+      "move": 155.29937387896297,
+      "actualLiftRadius": 0,
+      "actualDangerRadius": 0
+    },
+    "nearest": {
+      "n": 10,
+      "completeRate": 100,
+      "makespan": 336.4,
+      "makespanSd": 30.345345606863667,
+      "reward": 394.8716971930095,
+      "soft": 6.7,
+      "hardMask": 7.2,
+      "travel": 21.262703103809905,
+      "setup": 150,
+      "move": 170.10162483047924,
+      "actualLiftRadius": 0,
+      "actualDangerRadius": 0
+    },
+    "radiusPriority": {
+      "n": 10,
+      "completeRate": 100,
+      "makespan": 336.4,
+      "makespanSd": 30.345345606863667,
+      "reward": 394.8716971930095,
+      "soft": 6.7,
+      "hardMask": 7.2,
+      "travel": 21.262703103809905,
+      "setup": 150,
+      "move": 170.10162483047924,
+      "actualLiftRadius": 0,
+      "actualDangerRadius": 0
+    },
+    "random": {
+      "n": 10,
+      "completeRate": 100,
+      "makespan": 457,
+      "makespanSd": 78.58371332534496,
+      "reward": 364.46654647646267,
+      "soft": 6.3,
+      "hardMask": 21.2,
+      "travel": 47.62866739822042,
+      "setup": 185,
+      "move": 381.0293391857634,
+      "actualLiftRadius": 0,
+      "actualDangerRadius": 0
+    }
+  }
+}
